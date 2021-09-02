@@ -197,6 +197,7 @@ class DataGenerator:
         classes = list(np.unique(df.sss))
         X = []
         y = []
+        _max_numOfRows = -float('inf')
 
         # the clean_data_corpus is in multi-responses format
         #       response1 | response2 | ... | response50 | sss | total_length
@@ -211,36 +212,46 @@ class DataGenerator:
                     input_values = hubert_processor(wav_signal, return_tensors="tf", sampling_rate=sr).input_values
                     feat = hubert_model(input_values).hidden_states
 
-                    numpy_feature = feat.numpy()
-
-
-                    X.append(numpy_feature)
+                    # 'feat' is a list of 25 elements; each element is an array of shape (1, N, 1024) --> We'll
+                    # convert to (N, 1024) before store 'feat' into X
+                    feat = list(map(lambda arr: np.squeeze(arr), list(feat)))
+                    X.append(feat)
                     y.append(sss)
-
+                    _max_numOfRows = max(_max_numOfRows, feat[0].shape[0])
         else:   # the clean_data_corpus has 3 columns: file | duration | sss
             df.set_index('file', inplace=True)
             for fname in tqdm(df.index):
+                sss = df.loc[fname, 'sss']
                 if not os.path.isfile(self.clean_data_dir + '/' + fname):
                     continue
                 wav_signal, sr = librosa.load(self.clean_data_dir + '/' + fname, sr=None)
                 input_values = hubert_processor(wav_signal, return_tensors="tf", sampling_rate=sr).input_values
                 feat = hubert_model(input_values).hidden_states
 
-                numpy_feature = feat.numpy()
-
-                X.append(numpy_feature)
-
-                sss = df.loc[fname, 'sss']
+                # 'feat' is a list of 25 elements; each element is an array of shape (1, N, 1024) --> We'll
+                # convert to (N, 1024) before store 'feat' into X
+                feat = list(map(lambda arr: np.squeeze(arr), list(feat)))
+                X.append(feat)
                 y.append(sss)
-
+                _max_numOfRows = max(_max_numOfRows, feat[0].shape[0])
 
         y = to_categorical(y, num_classes=len(classes))
+        # Do padding each feature in X
+        for i, x in X:
+            # print('before:', x[0].shape)
+            r, c = x[0].shape
+            if r < _max_numOfRows:
+                padded_r = _max_numOfRows - r
+                padded_0 = np.zeros((padded_r, c))
+                x = list(map(lambda ft: np.vstack([ft, padded_0]), x))
+                X[i] = x
+            # print('   --> after padding:', x[0].shape)
 
         # save to pickle file
         if len(pickle_file) > 0:
             print('Saving to pickle file at:', self.pickle_dir + '/' + pickle_file)
             with open(self.pickle_dir + '/' + pickle_file, 'wb') as f:
-                pickle.dump( (X, X), f, protocol=4)
+                pickle.dump((X, y), f, protocol=4)
 
         # and return the features as well
         return X, y
