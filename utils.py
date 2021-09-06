@@ -5,10 +5,12 @@ from numpy.lib.stride_tricks import as_strided
 '''
     This function is copied from https://github.com/seth814/Audio-Classification/blob/master/clean.py
 '''
+
+
 def envelope(y, rate, threshold=0.0005):
     mask = []
     y = pd.Series(y).apply(np.abs)
-    y_mean = y.rolling(window=int(rate/20),
+    y_mean = y.rolling(window=int(rate / 20),
                        min_periods=1,
                        center=True).max()
     for mean in y_mean:
@@ -22,12 +24,13 @@ def envelope(y, rate, threshold=0.0005):
 '''
     This function calculate spectrogram of signal y at given sampling rate
 '''
-def calc_spectro(y, rate, fft_length=256, hop_length=128):
-    assert not np.iscomplexobj(y), "Must not pass in complex numbers"
 
+
+def calc_spectrogram(y, rate, fft_length=256, hop_length=128):
+    assert not np.iscomplexobj(y), "Must not pass in complex numbers"
     max_freq = 8000
     eps = 1e-14
-    step = 10           # slide window 10ms
+    step = 10  # slide window 10ms
     window_length = 20  # milliseconds
     if max_freq > rate / 2:
         raise ValueError("max_freq must not be greater than half of sample rate")

@@ -1,4 +1,3 @@
-
 from transformers import Wav2Vec2Processor, TFHubertModel
 from data_generator import DataGenerator
 
@@ -6,75 +5,61 @@ import librosa
 import os
 import numpy as np
 
-dt_generator = DataGenerator(raw_data_dir='/media/virtual3T/sessionsdata',
-                             raw_data_corpus='/media/virtual3T/bang/SleepinessDetection/new2-v1.csv',
-                             clean_data_dir='/media/virtual3T/bang/SleepinessDetection/clean',
-                             clean_data_corpus='clean_data_corpus.csv',
-                             pickle_dir='/media/virtual3T/bang/SleepinessDetection/pickle',
-                             training_feature_type='hubert')
+import config
 
-#dt_generator.generate_clean_data()
-#dt_generator.generate_clean_data_corpus(multi_columns=True)
+import pickle
 
+from sklearn.utils.class_weight import compute_class_weight
+import model as my_models
+
+from tensorflow.keras.callbacks import ModelCheckpoint
+from tensorflow.keras.callbacks import History
+import matplotlib.pyplot as plt
+
+import tensorflow as tf
+
+gpus = tf.config.experimental.list_physical_devices('GPU')
+if gpus:
+    try:
+        for gpu in gpus:
+            tf.config.experimental.set_memory_growth(gpu, True)
+    except RuntimeError as e:
+        print(e)
+
+dt_generator = DataGenerator(training_feature_type='HuBERT')
+
+######### TEST generating clean data #######################
+# dt_generator.generate_clean_data()
+# dt_generator.generate_clean_data_corpus(multi_columns=True)
+
+######## TEST generating feature from HuBERT ########################
 processor = Wav2Vec2Processor.from_pretrained("facebook/hubert-large-ls960-ft")
-model = TFHubertModel.from_pretrained("facebook/hubert-large-ls960-ft", output_hidden_states=True)
-dt_generator.generate_training_features(hubert_processor=processor, hubert_model=model)
+hubert_model = TFHubertModel.from_pretrained("facebook/hubert-large-ls960-ft")
+dt_generator.generate_training_features(hubert_processor=processor, hubert_model=hubert_model)
 
+# dt_generator.generate_testing_corpus(training_corpus='hubert10000_train_corpus.csv')
 
-
-
+# ########### TEST saving very huge pickle file ########################
+# X, y = dt_generator.load_training_pickle(['hubert3000.p', 'hubert5000.p', 'hubert3000.p', 'hubert5000.p'])
 #
-# clean_files = os.listdir('../SleepinessDetection/clean/')
-# X = []
-# _max_rows_number = -float('inf')
-# for f in clean_files[1:10]:
-#     wav_signal, sr = librosa.load('../SleepinessDetection/clean/'+f, sr=None)
-#     if len(wav_signal) == 0:
-#         continue
-#     input_values = processor(wav_signal, return_tensors="tf", sampling_rate=sr).input_values
-#     feat = model(input_values).hidden_states # this returns a tuple of 25 features
+# print('Write to hubert16000_001.p')
+# with open(config.__cfg__.pickle_dir + '/hubert16000_001.p', 'wb') as f_handle:
+#     pickle.dump((X[0:15001], y[0:15001]), f_handle, protocol=4)
+#     f_handle.close()
 #
-#     # convert to a list of 25 elements; each element is an array of shape (1, N, 1024)
-#     # --> reshape each element to (N, 1024)
-#     feat = list(map(lambda arr: np.squeeze(arr), list(feat)))
-#     #feat = np.array(feat) # convert to an array with shape of (25, N, 1024)
-#     X.append(feat)
+# print('Write to hubert16000_002.p')
+# with open(config.__cfg__.pickle_dir + '/hubert16000_002.p', 'wb') as f_handle:
+#     pickle.dump((X[15000:30001], y[15000:30001]), f_handle, protocol=4)
+#     f_handle.close()
 #
-#     print(feat[0].shape)
-#     _max_rows_number = max(_max_rows_number, feat[0].shape[0])
+# print('Write to hubert16000_003.p')
+# with open(config.__cfg__.pickle_dir + '/hubert16000_003.p', 'wb') as f_handle:
+#     pickle.dump((X[30000:45001], y[30000:45001]), f_handle, protocol=4)
+#     f_handle.close()
 #
+# print('Write to hubert16000_004.p')
+# with open(config.__cfg__.pickle_dir + '/hubert16000_004.p', 'wb') as f_handle:
+#     pickle.dump((X[45000:], y[45000:]), f_handle, protocol=4)
+#     f_handle.close()
 #
-# # Do padding
-# print('max number of rows:', _max_rows_number)
-# for i, x in enumerate(X):
-#     print('before:', x[0].shape)
-#     r, c = x[0].shape
-#     if r < _max_rows_number:
-#         padded_r = _max_rows_number - r
-#         padded_0 = np.zeros((padded_r, c))
-#         x = list(map(lambda ft: np.vstack([ft, padded_0]), x))
-#     X[i] = x
-#     print('   --> after padding:', x[0].shape)
-#
-
-
-
-
-
-
-
-
-
-
-
-
-
-#36 seconds
-# wav_signal, sr = librosa.load('../SleepinessDetection/clean/nlx-56f885b0-a1e2-11ea-a9bd-05f6eec0ad7f.wav', sr=None)
-# input_values = processor(wav_signal, return_tensors="tf", sampling_rate=sr).input_values
-# feat = model(input_values).hidden_states
-# for ft in feat:
-#     print(ft.shape)
-
-
-
+# print('Done!')
