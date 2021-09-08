@@ -20,8 +20,6 @@ class DataGenerator:
         self.training_feature_type = training_feature_type  # MFCC | SPECTROGRAM | HuBERT
 
 
-
-
     '''
         This function generates cleaned wav files from original audio files.
         (down sampling to 16kHz and save to directory ./clean)
@@ -299,7 +297,7 @@ class DataGenerator:
 
         # convert features list to a numpy-array
         X, y = np.array(X), np.array(y)
-        X = (X - _min) / (_max - _min)
+        # X = (X - _min) / (_max - _min)
         y = to_categorical(y, num_classes=len(classes))
 
         config.__cfg__.min_X = _min
@@ -610,7 +608,6 @@ class DataGenerator:
     '''
 
     def generate_testing_corpus(self, number_of_test, training_corpus=None, shuffle=True):
-        print("\nGenerate testing corpus of {} audio files".format(config.__cfg__.NUMBER_TESTING_SAMPLES))
         if not training_corpus:
             fname = self.training_feature_type.lower() + config.__cfg__.NUMBER_TRAINING_SAMPLES + '.csv'
         else:
@@ -618,6 +615,8 @@ class DataGenerator:
 
         if not number_of_test:
             number_of_test = config.__cfg__.NUMBER_TESTING_SAMPLES
+
+        print("\nGenerate testing corpus of {} audio files".format(number_of_test))
 
         df_train = pd.read_csv('./csv/' + fname)  # training corpus is always in single column format
         df_train.set_index('file', inplace=True)

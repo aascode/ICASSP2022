@@ -25,7 +25,7 @@ if gpus:
         print(e)
 
 
-def build_prediction(saved_model_path, dtframe, _min, _max):
+def build_prediction(saved_model_path, dtframe, _min=0, _max=1):
     hubert_processor = Wav2Vec2Processor.from_pretrained("facebook/hubert-large-ls960-ft")
     hubert_model = TFHubertModel.from_pretrained("facebook/hubert-large-ls960-ft")
 
@@ -72,38 +72,49 @@ def build_prediction(saved_model_path, dtframe, _min, _max):
         y_pred.append(np.argmax(pred))
         y_true.append(c)
 
-        predict_prob.append(np.mean(y_prob, axis=0).flatten())
+        predict_prob.append(np.argmax(np.mean(y_prob, axis=0).flatten()))
 
     return y_true, y_pred, predict_prob
 
 
 def run_test(args):
-    #----- these value are suitable for hubert1000.
-    # _min = -7.5425848960876465
-    # _max = 3.371579170227051
-
     df = pd.read_csv(args.test_corpus)
 
-    y_true, y_pred, fn_prob = build_prediction(args.model_name, df, args.xmin, args.xmax)
+    y_true, y_pred, fn_prob = build_prediction(args.model_name, df)
     acc_score = accuracy_score(y_true=y_true, y_pred=y_pred)
+
     print('Accuracy score: {}'.format(acc_score))
 
     df['sss_pred'] = y_pred
     df['probability'] = fn_prob
     df.to_csv(args.output, index=False)
 
-if __name__ == '__main__':
-    # data_gen = DataGenerator()
-    # data_gen.generate_testing_corpus(number_of_test=1000, training_corpus='hubert10000_train_corpus.csv',
-    #                                       shuffle=True)
 
+'''
+Command line:
+
+python3 test_model.py --model_name model1-hubert5000-20ep\
+ --test_corpus testing_corpus1000.csv\
+ --output test_result.csv\
+ --new_test_corpus false \
+ --test_files_num 5000\
+ --train_corpus hubert2000_train_corpus.csv 
+  
+'''
+
+if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Run Testing Sleepiness Classification Saved Model')
-    parser.add_argument('--model_name', type=str, default='./checkpoint/model1-hubert10000.model',
-                        help='the name of model stored in ./checkpoint')
-    parser.add_argument('--test_corpus', type=str, default='./csv/testing_corpus1000.csv', help='the testing corpus')
-    parser.add_argument('--output', type=str, default='./csv/prediction.csv', help='name of csv prediction file ')
-    parser.add_argument('--xmin', type=str, default='-7.5425848960876465', help='xmin value for regularization purpose')
-    parser.add_argument('--xmax', type=str, default='3.371579170227051', help='xmin value for regularization purpose')
+    parser.add_argument('--model_name', type=str, help='The name of model stored in ./checkpoint')
+    parser.add_argument('--test_corpus', type=str, help='the testing corpus')
+    parser.add_argument('--output', type=str, help='name of csv testing file ')
+    parser.add_argument('--new_test_corpus', type=str, default='false', help='Generate testing corpus')
+    parser.add_argument('--test_files_num', type=int, help='The number of audio file in testing corpus')
+    parser.add_argument('--train_corpus', type=str,
+                        help='The training corpus that testing files shouldn\'t be selected ')
     args, _ = parser.parse_known_args()
 
-    run_test(args)
+    if args.new_test_corpus.lower() == 'true':
+        data_gen = DataGenerator()
+        data_gen.generate_testing_corpus(number_of_test=args.test_files_num, training_corpus=args.train_corpus)
+
+    # run_test(args)

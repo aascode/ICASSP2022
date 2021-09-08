@@ -2,8 +2,7 @@ class Config:
     def __init__(self,
                  chunk_length=3,  # in seconds
                  sample_rate=16000,  # Hz
-                 n_samples=10000,  # number of audio files will be used to generate training features.
-                 # -1 means all of audio files in train_corpus will be used.
+                 n_samples=40000,  # number of audio files will be used to generate training features.
                  raw_data_corpus='./csv/new2.csv',
                  clean_data_corpus='./csv/clean_data_corpus.csv',
 
@@ -44,7 +43,7 @@ class Config:
         # When loading from pickle files, the length of the file1 is implied file2's offset
         self.PICKLE_OFFSET_INDEXES = []
         self.PICKlE_FILES_THRESHOLD = 2000       # this means we separate pickle file every 2000 audio files.
-                                                 # I tried with 3000 and it crashed
+                                                 # I tried with 3000, it crashed
 
 # --------------------------------------------------------------------------------------
 __cfg__ = Config(raw_data_dir='/media/virtual3T/sessionsdata',
