@@ -8,6 +8,7 @@ from tqdm import tqdm
 import tensorflow as tf
 from tensorflow.keras.utils import to_categorical
 
+import soundfile as sf
 import librosa
 from python_speech_features import mfcc
 
@@ -18,7 +19,6 @@ import config
 class DataGenerator:
     def __init__(self, training_feature_type='HuBert'):
         self.training_feature_type = training_feature_type  # MFCC | SPECTROGRAM | HuBERT
-
 
     '''
         This function generates cleaned wav files from original audio files.
@@ -82,9 +82,12 @@ class DataGenerator:
                 # Down sampling the signal to 16kHz
                 new_signal = librosa.resample(signal, rate, config.__cfg__.SAMPLE_RATE)
                 mask = envelope(new_signal, config.__cfg__.SAMPLE_RATE)
-                librosa.output.write_wav(filename=config.__cfg__.clean_data_dir + '/' + f,
-                                         rate=config.__cfg__.SAMPLE_RATE,
-                                         data=new_signal[mask])
+                # librosa.output.write_wav(filename=config.__cfg__.clean_data_dir + '/' + f,
+                #                          rate=config.__cfg__.SAMPLE_RATE,
+                #                          data=new_signal[mask])
+                sf.write(file=config.__cfg__.clean_data_dir + '/' + f,
+                         data=new_signal[mask],
+                         samplerate=config.__cfg__.SAMPLE_RATE)
 
         print('\n\tDONE! Check the {} for detail.\n'.format(log_file))
         with open(log_file, 'w') as fhandle:
@@ -99,26 +102,48 @@ class DataGenerator:
     '''
 
     @staticmethod
-    def generate_clean_data_corpus(multi_columns=False):
+    def generate_clean_data_corpus(output_csv=None, multi_columns=False):
+        if not output_csv:
+            output_csv = config.__cfg__.clean_data_corpus
+
         cols = [i for i in range(3, 53)]  # response samples
         cols.insert(0, 0)  # session id
+        cols.insert(1, 1)  # startTime
+        cols.append(79)  # gender
+        cols.append(80)  # age
         cols.append(143)  # sleepiness scale (label)
+        cols.append(145)  # depression scale (phq9_depression)
+        cols.append(146)  # (gad7_anxiety)
+        cols.append(149)  # (severity_insomnia)
+
         df = pd.read_csv(config.__cfg__.raw_data_corpus, usecols=cols)
 
-        # change the name of column 1..50
-        col_names = ['response' + str(i) for i in range(1, 51)]  # response1,...,response51
+        # change the name of columns
+        col_names = ['response' + str(i) for i in range(1, 51)]  # response1,...,response50
         col_names.insert(0, 'session_id')
+        col_names.insert(1, 'startTime')
+        col_names.append('gender')
+        col_names.append('age')
         col_names.append('sss')
+        col_names.append('phq9_depression')
+        col_names.append('gad7_anxiety')
+        col_names.append('severity_insomnia')
         df.columns = col_names
 
         # extract audio file name from responses
-        for col in col_names[1:-1]:  # skip column 'session_id' and 'sss'
+        for col in col_names[2:-6]:  # skip column 'session_id', 'startTime', 'gender', 'age' and 'sss'
             responses = df[col]
             re_pattern = "nlx-\w*-\w*-\w*-\w*-\w*"
             wav_files = list(
                 map(lambda x: (re.findall(re_pattern, x)[0] + '.wav') if type(x) is str else '__', responses)
             )
             df[col] = wav_files
+
+        # extract startTime of session
+        startTime = df['startTime']
+        re_pattern = "\d\d:\d\d:\d\d\.\d\d\d"
+        startTime = list(map(lambda x: (re.findall(re_pattern, x)[0]), startTime))
+        df['startTime'] = startTime
 
         # extract level of sleepiness
         sss = df['sss']
@@ -135,7 +160,9 @@ class DataGenerator:
             wav_sss = []  # sleepiness class
             for sess in tqdm(df.index):
                 sss = df.loc[sess, 'sss']
-                for resp in col_names[1:-1]:  # take response1 to response50
+                for resp in col_names[2:-6]:  # take response1 to response50
+                    if resp == 'response45' or resp == 'response47':
+                        continue
                     wav_file = config.__cfg__.clean_data_dir + '/' + df.loc[sess, resp]
                     if not os.path.isfile(wav_file):
                         continue
@@ -156,13 +183,17 @@ class DataGenerator:
             csv_df = csv_df[csv_df.duration > 0]
 
             # export csv file
-            csv_df.to_csv(config.__cfg__.clean_data_corpus, index=False)
+            csv_df.to_csv(output_csv, index=False)
 
         elif multi_columns:
             for sess in tqdm(df.index):  # calculate total length of wav files
                 length = 0
-                for resp in col_names[1:-1]:  # take response1 to response50
+                for resp in col_names[2:-6]:  # take response1 to response50
+                    if resp == 'response45' or resp == 'response47':
+                        continue
+                        
                     wav_file = config.__cfg__.clean_data_dir + '/' + df.loc[sess, resp]
+                    print(wav_file)
                     if not os.path.isfile(wav_file):
                         df.loc[sess, resp] = None
                         continue
@@ -170,11 +201,72 @@ class DataGenerator:
                     length += librosa.get_duration(y=y, sr=sr)
                 df.loc[sess, 'total_duration'] = length
 
+            # drop columns 45, 47
+            df = df.drop(['response45', 'response47'], axis=1)
+
             # drop rows that has total_duration = 0.0
             df = df[df.total_duration > 0]
-
+            print(df.columns)
             # export csv file
-            df.to_csv(config.__cfg__.clean_data_corpus, index=False)
+            df.to_csv(output_csv, index_label='session_id', index=True)
+
+    '''
+    Generate hubert features for every audio file in ./clean_audio
+        - Get the last_hidden_layer value in shape of (1, N, 1024)
+        - Reshape this object to (N, 1024)
+        - Save the result matrix (N, 1024) as numpy file. /hubert-feature/)
+    '''
+
+    def __generate_hubert_feature_corpus(self, hubert_model, hubert_processor):
+        df = pd.read_csv(config.__cfg__.clean_data_corpus, usecols=['file', 'sss'])
+
+        for _ in tqdm(range(len(df))):
+            fn, sss = df.at[_, 'file'], int(df.at[_, 'sss'])
+
+            wav_signal, sr = librosa.load(config.__cfg__.clean_data_dir + '/' + fn, sr=None)
+            if len(wav_signal) == 0:
+                continue
+            input_values = hubert_processor(wav_signal, return_tensors="tf", sampling_rate=sr).input_values
+            feat = hubert_model(input_values).last_hidden_state
+
+            x_features = np.squeeze(feat)  # (1, N, 1024) --> (N, 1024)
+
+            # save to numpy binary file
+            name_extension = os.path.splitext(fn)
+            np.save(config.__cfg__.pickle_dir + '/hubert-feature/' + name_extension[0] + '.npy', x_features)
+
+    '''
+    Generate hubert features for every audio file in ./clean_audio
+        - Through each file into HuBERT model
+        - Get the last_hidden_layer value in shape of (1, N, 1024)
+        - Reshape this object to (N, 1024), then calculate the mean for each column.
+        - Save the result vector (1024, ) as nympy file. /hubert-embedding/)
+          
+    '''
+
+    def __generate_hubert_embedding_corpus(self, hubert_model, hubert_processor):
+        df = pd.read_csv(config.__cfg__.clean_data_corpus, usecols=['file', 'sss'])
+
+        for _ in tqdm(range(len(df))):
+            fn, sss = df.at[_, 'file'], int(df.at[_, 'sss'])
+
+            wav_signal, sr = librosa.load(config.__cfg__.clean_data_dir + '/' + fn, sr=None)
+            if len(wav_signal) == 0:
+                continue
+            input_values = hubert_processor(wav_signal, return_tensors="tf", sampling_rate=sr).input_values
+            feat = hubert_model(input_values).last_hidden_state
+
+            x_embedding = np.squeeze(feat)  # (1, N, 1024) --> (N, 1024)
+            x_embedding = np.mean(x_embedding, axis=0).T  # (1024, )
+
+            # save to numpy binary file
+            name_extension = os.path.splitext(fn)
+            np.save(config.__cfg__.pickle_dir + '/hubert-embedding/' + name_extension[0] + '.npy', x_embedding)
+
+            # save to pickle file
+            # name_extension = os.path.splitext(fn)
+            # with open(config.__cfg__.pickle_dir + '/hubert-embedding/' + name_extension[0]+'.p', 'wb') as f_handle:
+            #     pickle.dump( (X, sss), f_handle, protocol=4)
 
     '''
         Generate features with HuBERT model
@@ -456,7 +548,6 @@ class DataGenerator:
     def __generate_spectrogram_features(self, pickle_file=''):
         print("\nGenerate {} features for {} audio files".format(self.training_feature_type.upper(),
                                                                  config.__cfg__.NUMBER_TRAINING_SAMPLES))
-
         X, y = [], []
         training_files, training_sss, training_durations = [], [], []
         _min, _max = float('inf'), -float('inf')
@@ -556,18 +647,23 @@ class DataGenerator:
         This function generates training features from audio files
     '''
 
-    def generate_training_features(self, hubert_model=None, hubert_processor=None):
+    def generate_training_features(self, hubert_model=None, hubert_processor=None, embedding=False):
+        # HuBERT
         if self.training_feature_type.lower() == 'hubert':
             if config.__cfg__.NUMBER_TRAINING_SAMPLES == -1:
-                return self.__generate_hubert_features_corpus(hubert_model, hubert_processor,
-                                                              pickle_file=self.training_feature_type.lower() + '.p')
+                if embedding:
+                    return self.__generate_hubert_embedding_corpus(hubert_model, hubert_processor)
+                else:
+                    return self.__generate_hubert_feature_corpus(hubert_model, hubert_processor)
             else:
                 return self.__generate_hubert_features(hubert_model, hubert_processor,
                                                        pickle_file=self.training_feature_type.lower() + \
-                                                                   str(config.__cfg__.NUMBER_TRAINING_SAMPLES) + '.p')
+                                                       str(config.__cfg__.NUMBER_TRAINING_SAMPLES) + '.p')
+        # MFCC
         elif self.training_feature_type.lower() == 'mfcc':
             return self.__generate_mfcc_features(pickle_file=self.training_feature_type.lower() + \
                                                              str(config.__cfg__.NUMBER_TRAINING_SAMPLES) + '.p')
+        # SPECTROGRAM
         elif self.training_feature_type.lower() == 'spectrogram':
             return self.__generate_mfcc_features(pickle_file=self.training_feature_type.lower() + \
                                                              str(config.__cfg__.NUMBER_TRAINING_SAMPLES) + '.p')
@@ -652,4 +748,47 @@ class DataGenerator:
         testing_df = pd.DataFrame(data={'file': testing_files, 'duration': testing_duration, 'sss': testing_sss})
         testing_df.to_csv('./csv/testing_corpus' + str(number_of_test) + '.csv', index=False)
 
+        print('Done!')
+
+    '''
+    This function generates the CSV file that contains:
+        'file': the numpy filename of hubert-embedding vector (1024, 1) of audio files
+        'label': the sleepiness degree of the speaker corresponding to the audio file.    
+    '''
+
+    def generate_hubert_embedding_csv(self):
+        print('Constructing the hubert embedding corpus...')
+
+        # first just read the clean corpus
+        df = pd.read_csv(config.__cfg__.clean_data_corpus)
+        df.sss = df.sss - 1  # we update the sleepiness level to [0..6]
+        ff, ff_label = [], []
+
+        # now walk through the embedding directory
+        files = os.listdir(config.__cfg__.pickle_dir + '/hubert-embedding')
+        for fn in tqdm(files):
+            ll = list(df[df.file == fn.replace('.npy', '.wav')].sss)[0]
+            ff.append(fn)
+            ff_label.append(ll)
+            # print(fn, '-->', ll)
+        pd.DataFrame(data={'file': ff, 'label': ff_label}).to_csv('csv/hubert_embedding_corpus.csv', index=False)
+        print('Done!')
+
+        # there are some error files --> need to drop out them from the files list
+        df = pd.read_csv('csv/hubert_embedding_corpus.csv')
+        filenames = list(map(lambda f: 'pickle/hubert-embedding/' + f, df.file))
+
+        # there are some error files --> need to drop out them from the files list
+        # so now we double check if the filename in current corpus has broken content (containing either NaN or empty)
+        err_files = []
+        for i, fn in tqdm(enumerate(filenames)):
+            XX = np.load(fn)
+            if np.isnan(XX).any():  # numpy file contains NaN value
+                print('NaN at file {}: {}; shape={}'.format(i, fn, XX.shape))
+                err_files.append(i)
+            if not XX.shape:  # numpy file has shape = ( )
+                print('Shape error at file {}: {}; shape={}'.format(i, fn, XX.shape))
+                err_files.append(i)
+        df = df.drop(err_files)
+        df.to_csv('csv/hubert_embedding_corpus.csv')  # save to new csv file for next uses
         print('Done!')

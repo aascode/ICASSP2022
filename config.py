@@ -2,7 +2,7 @@ class Config:
     def __init__(self,
                  chunk_length=3,  # in seconds
                  sample_rate=16000,  # Hz
-                 n_samples=40000,  # number of audio files will be used to generate training features.
+                 n_samples=-1,  # number of audio files will be used to generate training features. -1 means all files
                  raw_data_corpus='./csv/new2.csv',
                  clean_data_corpus='./csv/clean_data_corpus.csv',
 
@@ -10,6 +10,8 @@ class Config:
                  clean_data_dir='./clean_audio',
                  pickle_dir='./pickle', checkpoint_dir='./checkpoint'):
 
+        # Sleepy threshold
+        self.sleepy_threshold = 4 # 4,5,6,7
 
         # Corpus files
         self.raw_data_corpus = raw_data_corpus
@@ -46,6 +48,5 @@ class Config:
                                                  # I tried with 3000, it crashed
 
 # --------------------------------------------------------------------------------------
-__cfg__ = Config(raw_data_dir='/media/virtual3T/sessionsdata',
-                 raw_data_corpus='/media/virtual3T/bang/SleepinessDetection/new2-v1.csv',
-                 clean_data_dir='/media/virtual3T/bang/SleepinessDetection/clean')
+__cfg__ = Config(raw_data_dir='/media/data_sdf/sessionsdata',
+                 raw_data_corpus='/media/data_sdf/bang/SleepinessDetection/new2-v1.csv')
