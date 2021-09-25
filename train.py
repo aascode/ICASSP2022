@@ -838,7 +838,7 @@ def run_train_with_1group_masked_augmentation(args):
                  np.array(train_f1_scores).mean(), np.array(test_f1_scores).mean()), \
              bbox={'facecolor': '#cb9e5a', 'alpha': 2, 'edgecolor': '#cb9e5a', 'pad': 2}, ha='left')
     plt.legend(['Train', 'Test'])
-    plt.savefig('images/acc_' + args.model_name + '.pdf')
+    plt.savefig('images/acc_' + args.model_name + '_augmentation.pdf')
 
 
     # ----- save training results to .json file
@@ -852,7 +852,7 @@ def run_train_with_1group_masked_augmentation(args):
                 'test_f1_score_l1': test_f1_scores_l1,
                 }
 
-    with open('images/acc_'+args.model_name + '.json', 'w') as outfile:
+    with open('images/acc_'+args.model_name + '_augmentation.json', 'w') as outfile:
         outfile.write(json.dumps(log_data, indent=4))
     outfile.close()
 
@@ -870,6 +870,7 @@ if __name__ == '__main__':
     # Run this part to train the model by using audio responses in 1 group
     #   (single-group training)
     # ----------------------------------------------------------------------
+    '''
     for gr in range(1, 9):
         mod_name = 'model4-gr' + str(gr) + '-200ep'
         print('---------------------------------------------')
@@ -882,6 +883,7 @@ if __name__ == '__main__':
         custom_parser.add_argument('--group', type=int, default=gr)
         custom_args, _ = custom_parser.parse_known_args()
         run_train_by_1group(custom_args)  # train with single group of response
+    '''
 
     # ----------------------------------------------------------------------
     # Run this part to train the model by using all responses except the one belonging to masked group
@@ -903,7 +905,7 @@ if __name__ == '__main__':
     # ----------------------------------------------------------------------
     parser = argparse.ArgumentParser(description='Training Sleepiness Classification Saved Model')
     parser.add_argument('--model_name', type=str, default='model4_masked')
-    parser.add_argument('--epoch', type=int, default=1)
+    parser.add_argument('--epoch', type=int, default=200)
     parser.add_argument('--batch_size', type=int, default=64)
     args, _ = parser.parse_known_args()
     run_train_with_1group_masked_augmentation(args)
