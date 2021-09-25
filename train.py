@@ -242,6 +242,8 @@ def run_train_by_1group(args):
     kf = KFold(n_splits=5, random_state=128, shuffle=True)
     train_accuracies, test_accuracies = [], []
     train_f1_scores, test_f1_scores = [], []
+    train_f1_scores_l0, train_f1_scores_l1 = [], []
+    test_f1_scores_l0, test_f1_scores_l1 = [], []
     k = 0
     for train_index, test_index in kf.split(selected_data.index):
         the_model.reset_states()
@@ -297,6 +299,8 @@ def run_train_by_1group(args):
         f1_train1 = f1_score(y_train_true, y_train_predict)
         f1_train = np.mean([f1_train0, f1_train1])
         train_f1_scores.append(f1_train)
+        train_f1_scores_l0.append(f1_train0)
+        train_f1_scores_l1.append(f1_train1)
 
         # f1 scores of testing
         y_test_true = list(map(lambda l: 1 if l >= config.__cfg__.sleepy_threshold else 0, test_labels))
@@ -306,6 +310,8 @@ def run_train_by_1group(args):
         f1_test1 = f1_score(y_test_true, y_test_predict)
         f1_test = np.mean([f1_test0, f1_test1])
         test_f1_scores.append(f1_test)
+        test_f1_scores_l0.append(f1_test0)
+        test_f1_scores_l1.append(f1_test1)
 
         print('\n--------\nTRAINING ROUND-{}\n---------'.format(k))
         print(f'\tAccuracy (train, test)=(%.2f, %.2f)' % (train_acc * 100, test_acc * 100))
@@ -396,9 +402,16 @@ def run_train_by_1group(args):
     plt.legend(['Train', 'Test'])
     plt.savefig('images/acc_' + args.model_name + '.pdf')
 
-    # ----- save the data to .log file
-    log_data = {'train_accuracy': train_accuracies, 'test_accuracy': test_accuracies,
-                'train_f1_score': train_f1_scores,  'test_f1_score': test_f1_scores }
+    # ----- save the data to .json file
+    log_data = {'train_accuracy': train_accuracies,
+                'test_accuracy': test_accuracies,
+                'train_f1_score': train_f1_scores,
+                'test_f1_score': test_f1_scores,
+                'train_f1_score_l0': train_f1_scores_l0,
+                'test_f1_score_l0': test_f1_scores_l0,
+                'train_f1_score_l1': train_f1_scores_l1,
+                'test_f1_score_l1': test_f1_scores_l1,
+                }
     with open('images/acc_' + args.model_name + '.json', 'w') as outfile:
         outfile.write(json.dumps(log_data, indent=4))
     outfile.close()
@@ -535,7 +548,7 @@ def run_train_with_1group_masked(args):
             X_test_masked = X_test_masked.reshape(X_test_masked.shape[0], _nrows, _ncols, _ndepth)
 
             # checkpoint to save trained model in the form of (kth-fold)_(masked-group)
-            modelName = args.model_name + '_gr' + str(masked_group) + '_train' + str(k)
+            modelName = args.model_name + '_masked_gr' + str(masked_group) + '_train' + str(k)
             checkpoint = ModelCheckpoint(config.__cfg__.checkpoint_dir + '/' + modelName,
                                          monitor='val_loss', save_best_only=True, save_weights_only=False,
                                          save_freq=1, verbose=0, mode='max')
@@ -598,34 +611,26 @@ def run_train_with_1group_masked(args):
 
 
 '''
-Train will only 1 group of responses unmasked
+In this train, we consecutively select 1 group of responses to mask out. 
+The training data will be augmented from 1462 to 1462 x 8 = 11696 samples 
 '''
-
-
-def run_train_1group_unmasked(args):
+def run_train_with_1group_masked_augmentation(args):
     '''
-    :return: HuBERT embedding for training or testing session
+        This function returns augmented masked-embeddings for selected samples
     '''
-
-    def get_embeddings(selected_indexes, dataframe, masked_responses=[]):
+    def get_embeddings(selected_indexes, dataframe):
         print('\tGet embeddings for {} samples...'.format(len(selected_indexes)))
         X_embeddings = []
         y_labels = []
-        response_columns = ['response' + str(i) for i in range(1, 51)]
-        response_columns.remove('response45')
-        response_columns.remove('response47')
 
         for idx in tqdm(selected_indexes):  # go through the selected sessions
             label = dataframe.at[idx, 'sss']
-            X = [[] for _ in range(len(response_columns))]  # initialize each selected answer-column as []
+            X = [[] for _ in range(len(RESPONSE_COLUMNS))]  # initialize each selected answer-column as []
 
             numpy_files = []
-            for response in response_columns:
-                if response in masked_responses:
-                    numpy_files.append('pickle/hubert-embedding/non_existed.npy')
-                else:
+            for resp in RESPONSE_COLUMNS:
                     numpy_files.append('pickle/hubert-embedding/' +
-                                       str(dataframe.at[idx, response]).replace('.wav', '.npy'))
+                                       str(dataframe.at[idx, resp]).replace('.wav', '.npy'))
 
             for i in range(len(numpy_files)):  # load HuBERT embedding from numpy file of each response column.
                 if not os.path.isfile(numpy_files[i]):
@@ -670,21 +675,7 @@ def run_train_1group_unmasked(args):
             mask.append(i)
     dataset = dataset.drop(mask)
 
-    response_columns = ['response' + str(i) for i in range(1, 51)]
-    response_columns.remove('response45')
-    response_columns.remove('response47')
-    response_groups = [[],
-                       ['response1', 'response6'],  # group1 (reading)
-                       ['response46', 'response48'],  # group2  (Hearing & repeat)
-                       ['response7', 'response8', 'response9'],  # group3  (speechless)
-                       ['response' + str(i) for i in range(35, 45)],  # group4  (nonsense words)
-                       ['response2', 'response49', 'response50'],  # group5  (Personal memory)
-                       ['response4', 'response5'],  # group6  (Semantic fluency)
-                       ['response3'],  # group7  (picture description)
-                       ['response' + str(i) for i in range(10, 35)]  # group8  (Object naming)
-                       ]
-
-    _ndepth = len(response_columns)  # we have 48 responses in total
+    _ndepth = len(RESPONSE_COLUMNS)  # we have 48 responses in total
     _nrows = 32
     _ncols = 32
 
@@ -693,107 +684,180 @@ def run_train_1group_unmasked(args):
 
     # Using K-Fold training
     kf = KFold(n_splits=5, random_state=1, shuffle=True)
-
+    train_accuracies, test_accuracies = [], []
+    train_f1_scores, test_f1_scores = [], []
+    train_f1_scores_l0, train_f1_scores_l1 = [], []
+    test_f1_scores_l0, test_f1_scores_l1 = [], []
     k = 0
     training_results = {}
     for train_index, test_index in kf.split(dataset.index):
         k += 1
         print('\n**************************************************************************')
-        print('*                      Training Round-{}                                 *'.format(k))
+        print('*                       Training Round-{}                                 *'.format(k))
         print('**************************************************************************')
+
+        # reset model state to ensure the next train will be fair with previous one.
+        model.reset_states()
+        model.reset_metrics()
 
         train_labels, test_labels = dataset.sss[train_index], dataset.sss[test_index]
 
         # train and test the model with different masked_groups
         masked_train_results = {}
 
-        # Get full embeddings for 48 audio answers
+        # Get full embeddings of 48 audio responses
         X_train, y_train = get_embeddings(selected_indexes=train_index, dataframe=dataset)
         X_test, y_test = get_embeddings(selected_indexes=test_index, dataframe=dataset)
-        print('\t+ Train shape: {})'.format(X_train.shape))  # (m, 1024, 48)
+
+        # Generate masked data for training set
+        X_train_augmented = []
+        y_train_augmented = []
+        for masked_group in range(1, len(RESPONSE_GROUPS)): # from GR1 to GR8
+            X_train_masked = X_train
+            for response in RESPONSE_GROUPS[masked_group]:
+                col = RESPONSE_COLUMNS.index(response)
+                X_train_masked[:, :, col] = 0
+            X_train_augmented.append(X_train_masked)
+            y_train_augmented.append(y_train)
+        X_train_augmented = np.vstack(X_train_augmented)
+        y_train_augmented = np.vstack(y_train_augmented)
+        print('\t+ Train shape (augmented): {})'.format(X_train_augmented.shape))  # (m, 1024, 48)
         print('\t+ Test shape: {}'.format(X_test.shape))  # (m, 1024, 48)
 
+        # reshape to (M, 32, 32, 48)
+        X_train_augmented = X_train_augmented.reshape(X_train_augmented.shape[0], _nrows, _ncols, _ndepth)
+        X_test = X_test.reshape(X_test.shape[0], _nrows, _ncols, _ndepth)
+
         # Avoid imbalance training set
-        y_flat = np.argmax(y_train, axis=1)
+        y_flat = np.argmax(y_train_augmented, axis=1)
         class_weight = compute_class_weight('balanced', np.unique(y_flat), y_flat)
         class_weight = {k: v for k, v in enumerate(class_weight)}
         print('\t+ Class weights:{}'.format(class_weight))
 
-        # train & test the model by masking all other groups except 1
-        for umasked_group in range(1, len(response_groups)):
-            model.reset_states()
-            model.reset_metrics()
-            print('\n--------\nRound-{}; Unmask group{}={}\n---------'.format(k, umasked_group,
-                                                                              response_groups[umasked_group]))
+        # checkpoint to save trained model in the form of (kth-fold)_(masked-group)
+        modelName = args.model_name + '_augmentation_train' + str(k)
+        checkpoint = ModelCheckpoint(config.__cfg__.checkpoint_dir + '/' + modelName,
+                                     monitor='val_loss', save_best_only=True, save_weights_only=False,
+                                     save_freq=1, verbose=0, mode='max')
+        # train & save the model
+        hist = model.fit(X_train_augmented, y_train_augmented,
+                         epochs=args.epoch, batch_size=args.batch_size, shuffle=False, class_weight=class_weight,
+                         validation_data=(X_test, y_test), callbacks=[checkpoint])
+        # model.save(config.__cfg__.checkpoint_dir + '/' + modelName)
 
-            X_train_masked, X_test_masked = X_train, X_test
+        # ----- Validating the model ----
+        print('\t + Validating the model {}'.format(modelName))
 
-            # mask the embeddings not belonging umasked_group
-            masked_columns = ['response' + str(i) for i in range(1, 51)]
-            masked_columns.remove('response45')
-            masked_columns.remove('response47')
-            for r in response_groups[umasked_group]:
-                masked_columns.remove(r)
-            for c in masked_columns:
-                col = response_columns.index(c)
-                X_train_masked[:, :, col] = 0
-                X_test_masked[:, :, col] = 0
+        # accuracy
+        _, train_acc = model.evaluate(X_train_augmented, y_train_augmented, verbose=0)
+        _, test_acc = model.evaluate(X_test, y_test, verbose=0)
+        train_accuracies.append(train_acc)
+        test_accuracies.append(test_acc)
 
-            # reshape to (M, 32, 32, 48)
-            X_train_masked = X_train_masked.reshape(X_train_masked.shape[0], _nrows, _ncols, _ndepth)
-            X_test_masked = X_test_masked.reshape(X_test_masked.shape[0], _nrows, _ncols, _ndepth)
+        # f1 scores of training set
+        train_labels_augmented = []
+        for _ in range(1, len(RESPONSE_GROUPS) ):
+            train_labels_augmented += list(train_labels)
 
-            # checkpoint to save trained model in the form of (kth-fold)_(masked-group)
-            modelName = args.model_name + '_Train' + str(k) + '_' + 'Mask' + str(umasked_group)
-            checkpoint = ModelCheckpoint(config.__cfg__.checkpoint_dir + '/' + modelName,
-                                         monitor='val_loss', save_best_only=True, save_weights_only=False,
-                                         save_freq=1, verbose=0, mode='max')
-            # train & save the model
-            hist = model.fit(X_train_masked, y_train,
-                             epochs=args.epoch, batch_size=args.batch_size, shuffle=False, class_weight=class_weight,
-                             validation_data=(X_test_masked, y_test), callbacks=[checkpoint])
-            # model.save(config.__cfg__.checkpoint_dir + '/' + modelName)
+        y_train_true = list(map(lambda l: 1 if l >= config.__cfg__.sleepy_threshold else 0, train_labels_augmented))
+        y_train_predict = model.predict(X_train_augmented)
+        y_train_predict = list(np.argmax(y_train_predict, axis=1))
+        f1_train0 = f1_score(y_train_true, y_train_predict, pos_label=0)
+        f1_train1 = f1_score(y_train_true, y_train_predict)
+        f1_train = np.mean([f1_train0, f1_train1])
+        train_f1_scores.append(f1_train)
+        train_f1_scores_l0.append(f1_train0)
+        train_f1_scores_l1.append(f1_train1)
 
-            # ----- Validating the model ----
-            print('\t + Validating the model {}'.format(modelName))
+        # f1 scores of testing set
+        y_test_true = list(map(lambda l: 1 if l >= config.__cfg__.sleepy_threshold else 0, test_labels))
+        y_test_predict = model.predict(X_test)
+        y_test_predict = list(np.argmax(y_test_predict, axis=1))
+        f1_test0 = f1_score(y_test_true, y_test_predict, pos_label=0)
+        f1_test1 = f1_score(y_test_true, y_test_predict)
+        f1_test = np.mean([f1_test0, f1_test1])
+        test_f1_scores.append(f1_test)
+        test_f1_scores_l0.append(f1_test0)
+        test_f1_scores_l1.append(f1_test1)
 
-            # accuracy
-            _, train_acc = model.evaluate(X_train_masked, y_train, verbose=0)
-            _, test_acc = model.evaluate(X_test_masked, y_test, verbose=0)
+        print('\n--------\nRound-{}\n---------'.format(k))
+        print(f'\tAccuracy (train, test)=(%.2f, %.2f)' % (train_acc * 100, test_acc * 100))
+        print(f'\tTraining F1-scores(l0, l1, mean)=(%.2f, %.2f, .%2f)' % (f1_train0, f1_train1, f1_train))
+        print(f'\tTesting F1-scores(l0, l1, mean)=(%.2f, %.2f, .%2f)' % (f1_test0, f1_test1, f1_test))
 
-            # f1 scores of training set
-            y_train_true = list(map(lambda l: 1 if l >= config.__cfg__.sleepy_threshold else 0, train_labels))
-            y_train_predict = model.predict(X_train_masked)
-            y_train_predict = list(np.argmax(y_train_predict, axis=1))
-            f1_train0 = f1_score(y_train_true, y_train_predict, pos_label=0)
-            f1_train1 = f1_score(y_train_true, y_train_predict)
-            f1_train = np.mean([f1_train0, f1_train1])
+        # save training history to json file
+        training_log = {'acc': hist.history['acc'],
+                        'val_acc': hist.history['val_acc'],
+                        'loss': hist.history['loss'],
+                        'val_loss': hist.history['val_loss']}
+        with open('images/hist_' + modelName + '.json', 'w') as outfile:
+            outfile.write(json.dumps(training_log, indent=4))
+        outfile.close()
 
-            # f1 scores of testing set
-            y_test_true = list(map(lambda l: 1 if l >= config.__cfg__.sleepy_threshold else 0, test_labels))
-            y_test_predict = model.predict(X_test_masked)
-            y_test_predict = list(np.argmax(y_test_predict, axis=1))
-            f1_test0 = f1_score(y_test_true, y_test_predict, pos_label=0)
-            f1_test1 = f1_score(y_test_true, y_test_predict)
-            f1_test = np.mean([f1_test0, f1_test1])
+    # ---- Plot the result -------
+    plt.figure(figsize=(15, 10))
+    # plot accuracies after training -----
+    ax1 = plt.subplot(211)
+    plt.title('Accuracy of Model - {}'.format(args.model_name), fontdict=dict(fontsize=13))
+    # plt.xlabel('Training round')
+    plt.ylabel('Accuracy')
+    plt.ylim((0, 1))
+    x_axis = np.arange(len(test_accuracies)) + 1
+    plt.bar(x_axis - 0.1, train_accuracies, width=0.2)
+    plt.bar(x_axis + 0.1, test_accuracies, width=0.2)
+    for i, acc in enumerate(train_accuracies):
+        plt.text(x=i - .1 + 1, y=acc - .01, s=f'%.2f' % (acc * 100), color='white', ha='center', va='top', )
 
-            print('\n--------\nRound-{}; Unmask group{}={}\n---------'.format(k, umasked_group,
-                                                                              response_groups[umasked_group]))
-            print(f'\tAccuracy (train, test)=(%.2f, %.2f)' % (train_acc * 100, test_acc * 100))
-            print(f'\tTraining F1-scores(l0, l1, mean)=(%.2f, %.2f, .%2f)' % (f1_train0, f1_train1, f1_train))
-            print(f'\tTesting F1-scores(l0, l1, mean)=(%.2f, %.2f, .%2f)' % (f1_test0, f1_test1, f1_test))
+    for i, acc in enumerate(test_accuracies):
+        plt.text(x=i + .1 + 1, y=acc - .01, s=f'%.2f' % (acc * 100), color='blue', ha='center', va='top', )
+        # fontdict = dict(fontsize=12),
 
-            outputs = {'unmasked_responses': response_groups[umasked_group],
-                       'Accuracy (train,test)': (train_acc * 100, test_acc * 100),
-                       'Train f1-score(l0,l1,mean)': (f1_train0, f1_train1, f1_train),
-                       'Test f1-score(l0,l1,mean)': (f1_test0, f1_test1, f1_test)}
-            masked_train_results['unmasked_group' + str(umasked_group)] = outputs
+    plt.text(1.5, np.min(test_accuracies) - .1,
+             f'Avg. accuracy (Train/Test): %.2f/%.2f' % (
+                 np.array(train_accuracies).mean() * 100, np.array(test_accuracies).mean() * 100),
+             bbox={'facecolor': '#cb9e5a', 'alpha': 2, 'edgecolor': '#cb9e5a', 'pad': 2}, )
+    # fontdict=dict(fontsize=16), ha='left')
+    plt.legend(['Train', 'Test'])
 
-        training_results['Train-' + str(k)] = masked_train_results
+    # plot f1 score after training ----
+    ax2 = plt.subplot(212)
+    # plt.title('f1-scores of Model - {}'.format(args.model_name), fontdict=dict(fontsize=13))
+    plt.xlabel('Training round')
+    plt.ylabel('F1 scores')
+    plt.ylim((0, 1))
+    x_axis = np.arange(len(train_f1_scores)) + 1
+    plt.bar(x_axis - .1, train_f1_scores, width=0.2)
+    plt.bar(x_axis + .1, test_f1_scores, width=0.2)
+    for i, score in enumerate(train_f1_scores):
+        plt.text(x=i - .1 + 1, y=score - .01, s=f'%.2f' % score, color='white', ha='center', va='top')
+    for i, score in enumerate(test_f1_scores):
+        plt.text(x=i + .1 + 1, y=score - .01, s=f'%.2f' % score, color='blue', ha='center', va='top')
 
-    with open('images/acc_' + args.model_name + '.json', 'w') as outfile:
-        outfile.write(json.dumps(training_results, indent=4))
+    plt.text(1.5, np.max(test_f1_scores) + .02,
+             f'Avg. f1-score (Train/Test) %.2f/%.2f' % (
+                 np.array(train_f1_scores).mean(), np.array(test_f1_scores).mean()), \
+             bbox={'facecolor': '#cb9e5a', 'alpha': 2, 'edgecolor': '#cb9e5a', 'pad': 2}, ha='left')
+    plt.legend(['Train', 'Test'])
+    plt.savefig('images/acc_' + args.model_name + '.pdf')
+
+
+    # ----- save training results to .json file
+    log_data = {'train_accuracy': train_accuracies,
+                'test_accuracy': test_accuracies,
+                'train_f1_score': train_f1_scores,
+                'test_f1_score': test_f1_scores,
+                'train_f1_score_l0': train_f1_scores_l0,
+                'test_f1_score_l0': test_f1_scores_l0,
+                'train_f1_score_l1': train_f1_scores_l1,
+                'test_f1_score_l1': test_f1_scores_l1,
+                }
+
+    with open('images/acc_'+args.model_name + '.json', 'w') as outfile:
+        outfile.write(json.dumps(log_data, indent=4))
     outfile.close()
+
+    return None
+    # --------------------------
 
 
 '''
@@ -802,7 +866,10 @@ def run_train_1group_unmasked(args):
 *********************************************
 '''
 if __name__ == '__main__':
-    # train the model by a single group of responses
+    # ----------------------------------------------------------------------
+    # Run this part to train the model by using audio responses in 1 group
+    #   (single-group training)
+    # ----------------------------------------------------------------------
     for gr in range(1, 9):
         mod_name = 'model4-gr' + str(gr) + '-200ep'
         print('---------------------------------------------')
@@ -816,18 +883,34 @@ if __name__ == '__main__':
         custom_args, _ = custom_parser.parse_known_args()
         run_train_by_1group(custom_args)  # train with single group of response
 
-    # train the model with 1 group masked
+    # ----------------------------------------------------------------------
+    # Run this part to train the model by using all responses except the one belonging to masked group
+    #       (1-group masked training)
+    # ----------------------------------------------------------------------
+    '''
     parser = argparse.ArgumentParser(description='Training Sleepiness Classification Saved Model')
-    parser.add_argument('--model_name', type=str, default='model4_masked')
+    parser.add_argument('--model_name', type=str, default='model4-200ep')
     parser.add_argument('--epoch', type=int, default=200)
     parser.add_argument('--batch_size', type=int, default=64)
     args, _ = parser.parse_known_args()
     run_train_with_1group_masked(args)
+    '''
+
+    # ----------------------------------------------------------------------
+    # Run this part to the model by using augmented data.
+    # The training dataset is generated by adding 1-group masked embedding
+    #       (data-masked augmented training)
+    # ----------------------------------------------------------------------
+    parser = argparse.ArgumentParser(description='Training Sleepiness Classification Saved Model')
+    parser.add_argument('--model_name', type=str, default='model4_masked')
+    parser.add_argument('--epoch', type=int, default=1)
+    parser.add_argument('--batch_size', type=int, default=64)
+    args, _ = parser.parse_known_args()
+    run_train_with_1group_masked_augmentation(args)
 
 
-    # run_train_1group_unmasked(args)  # train with 1 group is not masked
 
 '''
 -----Command line: ----
-python3 train.py --model_name=model1-gr1-200ep.model --epoch=200  --batch_size 32  
+python3 train.py --model_name=name-of-model --epoch=200  --batch_size=64  
 '''

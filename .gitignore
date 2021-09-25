@@ -1,8 +1,0 @@
-__pycache__
-checkpoint/
-images/
-test_audio/
-clean_audio/
-pickle/
-*.out
-*.json
