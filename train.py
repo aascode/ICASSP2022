@@ -48,16 +48,61 @@ RESPONSE_COLUMNS = ['response' + str(i) for i in range(1, 51)]
 RESPONSE_COLUMNS.remove('response45')
 RESPONSE_COLUMNS.remove('response47')
 
+# RESPONSE_GROUPS = [[],  # this means all of responses
+#                    ['response1', 'response6'],  # group1 (reading)
+#                    ['response46', 'response48'],  # group2  (Hearing & repeat)
+#                    ['response7', 'response8', 'response9'],  # group3  (speechless)
+#                    ['response' + str(i) for i in range(35, 45)],  # group4  (nonsense words)
+#                    ['response2', 'response49', 'response50'],  # group5  (Personal memory)
+#                    ['response4', 'response5'],  # group6  (Semantic fluency)
+#                    ['response3'],  # group7  (picture description)
+#                    ['response' + str(i) for i in range(10, 35)]  # group8  (Object naming)
+#                    ]
+
+
+# this fashion based on the utility of tasks
+# RESPONSE_GROUPS = [[],  # this means all of responses
+#                    ['response1', 'response6'],  # group1 (Mic test & attention - reading)
+#                    ['response2', 'response3'],  # group2, task4 (open-end responses)
+#                    ['response4', 'response5'],  # group3 (test memory of participants),
+#                    ['response7'],               # group4 (Measures respiratory volume and various muscles that produce vocalizations)
+#                    ['response8', 'response9'],  # group5 (Measures psychomotor symptoms)
+#                    ['response' + str(i) for i in range(10, 44)],  # group6  (Measures memory in aging populations)
+#                    ['response46', 'response48'],  # group6 (immediate recall ability)
+#                    ['response49', 'response50']  # group7  (Self-reported information)
+#                    ]
+
+# this fashion based on name of tasks
+# 1. Microphone test
+# 2. Free speech
+# 3. Picture description
+# 4. Category naming
+# 5. Phonemic fluency
+# 6. Phonetically-balanced paragraph reading
+# 7. Sustained phonation
+# 8. Diadochokinetic tasks (pa-pa-pa, puh-tuh-kuh)
+# 9. Confrontational naming
+# 10. Non-word pronunciation
+# 11. Memory recall (repeat a sentence)
+# 12. Self report (medication information)
+
 RESPONSE_GROUPS = [[],  # this means all of responses
-                   ['response1', 'response6'],  # group1 (reading)
-                   ['response46', 'response48'],  # group2  (Hearing & repeat)
-                   ['response7', 'response8', 'response9'],  # group3  (speechless)
-                   ['response' + str(i) for i in range(35, 45)],  # group4  (nonsense words)
-                   ['response2', 'response49', 'response50'],  # group5  (Personal memory)
-                   ['response4', 'response5'],  # group6  (Semantic fluency)
-                   ['response3'],  # group7  (picture description)
-                   ['response' + str(i) for i in range(10, 35)]  # group8  (Object naming)
+                   ['response1'],  # task 1 (Mic test)
+                   ['response2'],  # task 2 (Free speech)
+                   ['response3'],  # task 3 (picture description)
+                   ['response4'],  # task 4 (category naming - give name of animals/tools/fruits/household)
+                   ['response5'],  # task 5 (list all words begin with letter ?)
+                   ['response6'],  # task 6 (Phonetically-balanced paragraph reading)
+                   ['response7'],  # task 7 (say /aaa/)
+                   ['response8'],  # task 8 (pa-pa-pa)
+                   ['response9'],  # task 9 (pa-ta-ka)
+                   ['response' + str(i) for i in range(10, 34)], # task 10 (Confrontational naming)
+                   ['response' + str(i) for i in range(35, 44)], # task 11 (non-word)
+                   ['response46', 'response48'],                 # task 12 (sentence repeat)
+                   ['response49', 'response50']                  # task 13 Self report (medication information)
                    ]
+
+
 
 '''
 Train with group-X of responses; Binary classification
@@ -273,7 +318,7 @@ def run_train_by_1group(args):
         print('\tClass weights:', class_weight)
 
         # checkpoint to save trained model
-        model_name = args.model_name + '_(' + str(len(test_accuracies) + 1) + ')'
+        model_name = args.model_name + '_train' + str(len(test_accuracies) + 1)
         checkpoint = ModelCheckpoint(config.__cfg__.checkpoint_dir + '/' + model_name,
                                      monitor='val_loss', save_best_only=True, save_weights_only=False,
                                      save_freq=1, verbose=0, mode='max')
@@ -605,7 +650,7 @@ def run_train_with_1group_masked(args):
 
         training_results['Train-' + str(k)] = masked_train_results
 
-    with open('images/acc_'+args.model_name + '.json', 'w') as outfile:
+    with open('images/acc_'+args.model_name + '_masked_1group.json', 'w') as outfile:
         outfile.write(json.dumps(training_results, indent=4))
     outfile.close()
 
@@ -735,7 +780,7 @@ def run_train_with_1group_masked_augmentation(args):
         print('\t+ Class weights:{}'.format(class_weight))
 
         # checkpoint to save trained model in the form of (kth-fold)_(masked-group)
-        modelName = args.model_name + '_augmentation_train' + str(k)
+        modelName = args.model_name + '_masked_augmentation_train' + str(k)
         checkpoint = ModelCheckpoint(config.__cfg__.checkpoint_dir + '/' + modelName,
                                      monitor='val_loss', save_best_only=True, save_weights_only=False,
                                      save_freq=1, verbose=0, mode='max')
@@ -852,7 +897,7 @@ def run_train_with_1group_masked_augmentation(args):
                 'test_f1_score_l1': test_f1_scores_l1,
                 }
 
-    with open('images/acc_'+args.model_name + '_augmentation.json', 'w') as outfile:
+    with open('images/acc_'+args.model_name + '_masked_augmentation.json', 'w') as outfile:
         outfile.write(json.dumps(log_data, indent=4))
     outfile.close()
 
@@ -870,9 +915,8 @@ if __name__ == '__main__':
     # Run this part to train the model by using audio responses in 1 group
     #   (single-group training)
     # ----------------------------------------------------------------------
-    '''
-    for gr in range(1, 9):
-        mod_name = 'model4-gr' + str(gr) + '-200ep'
+    for gr in range(1, 13):
+        mod_name = 'model4-train-by-task' + str(gr)
         print('---------------------------------------------')
         print('----------TRAIN THE MODEL {}-----------------'.format(mod_name))
         print('---------------------------------------------')
@@ -883,20 +927,18 @@ if __name__ == '__main__':
         custom_parser.add_argument('--group', type=int, default=gr)
         custom_args, _ = custom_parser.parse_known_args()
         run_train_by_1group(custom_args)  # train with single group of response
-    '''
+
 
     # ----------------------------------------------------------------------
     # Run this part to train the model by using all responses except the one belonging to masked group
     #       (1-group masked training)
     # ----------------------------------------------------------------------
-    '''
     parser = argparse.ArgumentParser(description='Training Sleepiness Classification Saved Model')
-    parser.add_argument('--model_name', type=str, default='model4-200ep')
+    parser.add_argument('--model_name', type=str, default='model4-task')
     parser.add_argument('--epoch', type=int, default=200)
     parser.add_argument('--batch_size', type=int, default=64)
     args, _ = parser.parse_known_args()
     run_train_with_1group_masked(args)
-    '''
 
     # ----------------------------------------------------------------------
     # Run this part to the model by using augmented data.
@@ -904,7 +946,7 @@ if __name__ == '__main__':
     #       (data-masked augmented training)
     # ----------------------------------------------------------------------
     parser = argparse.ArgumentParser(description='Training Sleepiness Classification Saved Model')
-    parser.add_argument('--model_name', type=str, default='model4_masked')
+    parser.add_argument('--model_name', type=str, default='model4-task')
     parser.add_argument('--epoch', type=int, default=200)
     parser.add_argument('--batch_size', type=int, default=64)
     args, _ = parser.parse_known_args()
