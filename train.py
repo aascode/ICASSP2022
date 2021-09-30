@@ -94,12 +94,12 @@ RESPONSE_GROUPS = [[],  # this means all of responses
                    ['response5'],  # task 5 (list all words begin with letter ?)
                    ['response6'],  # task 6 (Phonetically-balanced paragraph reading)
                    ['response7'],  # task 7 (say /aaa/)
-                   ['response8'],  # task 8 (pa-pa-pa)
-                   ['response9'],  # task 9 (pa-ta-ka)
-                   ['response' + str(i) for i in range(10, 34)], # task 10 (Confrontational naming)
-                   ['response' + str(i) for i in range(35, 44)], # task 11 (non-word)
-                   ['response46', 'response48'],                 # task 12 (sentence repeat)
-                   ['response49', 'response50']                  # task 13 Self report (medication information)
+                   ['response8', 'response9'],  # task 8 (pa-pa-pa; puh-tuh-kuh)
+                   # ['response9'],  # task 9 (pa-ta-ka)
+                   ['response' + str(i) for i in range(10, 34)], # task 8 (Confrontational naming)
+                   ['response' + str(i) for i in range(35, 44)], # task 9 (non-word)
+                   ['response46', 'response48'],                 # task 10 (sentence repeat)
+                   ['response49', 'response50']                  # task 11 Self report (medication information)
                    ]
 
 
@@ -282,7 +282,7 @@ def run_train_by_1group(args):
     _nrows, _ncols, _ndepth = 32, 32, len(response_set)
 
     # Get the model
-    the_model = my_models.get_model4(input_shape=(_nrows, _ncols, _ndepth))
+    #the_model = my_models.get_model4(input_shape=(_nrows, _ncols, _ndepth))
 
     kf = KFold(n_splits=5, random_state=128, shuffle=True)
     train_accuracies, test_accuracies = [], []
@@ -291,8 +291,11 @@ def run_train_by_1group(args):
     test_f1_scores_l0, test_f1_scores_l1 = [], []
     k = 0
     for train_index, test_index in kf.split(selected_data.index):
-        the_model.reset_states()
-        the_model.reset_metrics()
+        # the_model.reset_states()
+        # the_model.reset_metrics()
+
+        # Get the model
+        the_model = my_models.get_model4(input_shape=(_nrows, _ncols, _ndepth))
 
         k += 1
         print('\n**************************************************************************')
@@ -445,7 +448,7 @@ def run_train_by_1group(args):
                  np.array(train_f1_scores).mean(), np.array(test_f1_scores).mean()), \
              bbox={'facecolor': '#cb9e5a', 'alpha': 2, 'edgecolor': '#cb9e5a', 'pad': 2}, ha='left')
     plt.legend(['Train', 'Test'])
-    plt.savefig('images/acc_' + args.model_name + '.pdf')
+    #plt.savefig('images/acc_' + args.model_name + '.pdf')
 
     # ----- save the data to .json file
     log_data = {'train_accuracy': train_accuracies,
@@ -544,7 +547,7 @@ def run_train_with_1group_masked(args):
     _ncols = 32
 
     # Get the model
-    model = my_models.get_model4(input_shape=(_nrows, _ncols, _ndepth))
+    # model = my_models.get_model4(input_shape=(_nrows, _ncols, _ndepth))
 
     # Using K-Fold training
     kf = KFold(n_splits=5, random_state=1, shuffle=True)
@@ -576,8 +579,10 @@ def run_train_with_1group_masked(args):
 
         # train & test the model by masking specific goup
         for masked_group in range(0, len(RESPONSE_GROUPS)):
-            model.reset_states()
-            model.reset_metrics()
+            # model.reset_states()
+            # model.reset_metrics()
+            model = my_models.get_model4(input_shape=(_nrows, _ncols, _ndepth))
+
             print('\n--------\nRound-{}; Mask group{}={}\n---------'.format(k, masked_group,
                                                                             RESPONSE_GROUPS[masked_group]))
 
@@ -725,7 +730,7 @@ def run_train_with_1group_masked_augmentation(args):
     _ncols = 32
 
     # Get the model
-    model = my_models.get_model4(input_shape=(_nrows, _ncols, _ndepth))
+    # model = my_models.get_model4(input_shape=(_nrows, _ncols, _ndepth))
 
     # Using K-Fold training
     kf = KFold(n_splits=5, random_state=1, shuffle=True)
@@ -742,8 +747,9 @@ def run_train_with_1group_masked_augmentation(args):
         print('**************************************************************************')
 
         # reset model state to ensure the next train will be fair with previous one.
-        model.reset_states()
-        model.reset_metrics()
+        # model.reset_states()
+        # model.reset_metrics()
+        model = my_models.get_model4(input_shape=(_nrows, _ncols, _ndepth))
 
         train_labels, test_labels = dataset.sss[train_index], dataset.sss[test_index]
 
@@ -755,23 +761,33 @@ def run_train_with_1group_masked_augmentation(args):
         X_test, y_test = get_embeddings(selected_indexes=test_index, dataframe=dataset)
 
         # Generate masked data for training set
-        X_train_augmented = []
-        y_train_augmented = []
+        X_train_augmented, X_test_augmented = [], []
+        y_train_augmented, y_test_augmented = [], []
         for masked_group in range(1, len(RESPONSE_GROUPS)): # from GR1 to GR8
-            X_train_masked = X_train
+            X_train_masked, X_test_masked = X_train, X_test
             for response in RESPONSE_GROUPS[masked_group]:
                 col = RESPONSE_COLUMNS.index(response)
                 X_train_masked[:, :, col] = 0
+                X_test_masked[:, :, col] = 0
+
             X_train_augmented.append(X_train_masked)
             y_train_augmented.append(y_train)
+            X_test_augmented.append(X_test_masked)
+            y_test_augmented.append(y_test)
+
+
         X_train_augmented = np.vstack(X_train_augmented)
         y_train_augmented = np.vstack(y_train_augmented)
+        X_test_augmented = np.vstack(X_test_augmented)
+        y_test_augmented = np.vstack(y_test_augmented)
+
         print('\t+ Train shape (augmented): {})'.format(X_train_augmented.shape))  # (m, 1024, 48)
         print('\t+ Test shape: {}'.format(X_test.shape))  # (m, 1024, 48)
 
         # reshape to (M, 32, 32, 48)
         X_train_augmented = X_train_augmented.reshape(X_train_augmented.shape[0], _nrows, _ncols, _ndepth)
-        X_test = X_test.reshape(X_test.shape[0], _nrows, _ncols, _ndepth)
+        X_test_augmented = X_test_augmented.reshape(X_test_augmented.shape[0], _nrows, _ncols, _ndepth)
+        #X_test = X_test.reshape(X_test.shape[0], _nrows, _ncols, _ndepth)
 
         # Avoid imbalance training set
         y_flat = np.argmax(y_train_augmented, axis=1)
@@ -787,7 +803,7 @@ def run_train_with_1group_masked_augmentation(args):
         # train & save the model
         hist = model.fit(X_train_augmented, y_train_augmented,
                          epochs=args.epoch, batch_size=args.batch_size, shuffle=False, class_weight=class_weight,
-                         validation_data=(X_test, y_test), callbacks=[checkpoint])
+                         validation_data=(X_test_augmented, y_test_augmented), callbacks=[checkpoint])
         # model.save(config.__cfg__.checkpoint_dir + '/' + modelName)
 
         # ----- Validating the model ----
@@ -795,14 +811,16 @@ def run_train_with_1group_masked_augmentation(args):
 
         # accuracy
         _, train_acc = model.evaluate(X_train_augmented, y_train_augmented, verbose=0)
-        _, test_acc = model.evaluate(X_test, y_test, verbose=0)
+        _, test_acc = model.evaluate(X_test_augmented, y_test_augmented, verbose=0)
         train_accuracies.append(train_acc)
         test_accuracies.append(test_acc)
 
         # f1 scores of training set
         train_labels_augmented = []
+        test_labels_augmented = []
         for _ in range(1, len(RESPONSE_GROUPS) ):
             train_labels_augmented += list(train_labels)
+            test_labels_augmented += list(test_labels)
 
         y_train_true = list(map(lambda l: 1 if l >= config.__cfg__.sleepy_threshold else 0, train_labels_augmented))
         y_train_predict = model.predict(X_train_augmented)
@@ -815,8 +833,8 @@ def run_train_with_1group_masked_augmentation(args):
         train_f1_scores_l1.append(f1_train1)
 
         # f1 scores of testing set
-        y_test_true = list(map(lambda l: 1 if l >= config.__cfg__.sleepy_threshold else 0, test_labels))
-        y_test_predict = model.predict(X_test)
+        y_test_true = list(map(lambda l: 1 if l >= config.__cfg__.sleepy_threshold else 0, test_labels_augmented))
+        y_test_predict = model.predict(X_test_augmented)
         y_test_predict = list(np.argmax(y_test_predict, axis=1))
         f1_test0 = f1_score(y_test_true, y_test_predict, pos_label=0)
         f1_test1 = f1_score(y_test_true, y_test_predict)
@@ -915,8 +933,8 @@ if __name__ == '__main__':
     # Run this part to train the model by using audio responses in 1 group
     #   (single-group training)
     # ----------------------------------------------------------------------
-    for gr in range(1, 13):
-        mod_name = 'model4-train-by-task' + str(gr)
+    for gr in range(0, 13):
+        mod_name = 'separated_train-by-task' + str(gr)
         print('---------------------------------------------')
         print('----------TRAIN THE MODEL {}-----------------'.format(mod_name))
         print('---------------------------------------------')
@@ -934,7 +952,7 @@ if __name__ == '__main__':
     #       (1-group masked training)
     # ----------------------------------------------------------------------
     parser = argparse.ArgumentParser(description='Training Sleepiness Classification Saved Model')
-    parser.add_argument('--model_name', type=str, default='model4-task')
+    parser.add_argument('--model_name', type=str, default='masking_train')
     parser.add_argument('--epoch', type=int, default=200)
     parser.add_argument('--batch_size', type=int, default=64)
     args, _ = parser.parse_known_args()
@@ -946,7 +964,7 @@ if __name__ == '__main__':
     #       (data-masked augmented training)
     # ----------------------------------------------------------------------
     parser = argparse.ArgumentParser(description='Training Sleepiness Classification Saved Model')
-    parser.add_argument('--model_name', type=str, default='model4-task')
+    parser.add_argument('--model_name', type=str, default='masking_train')
     parser.add_argument('--epoch', type=int, default=200)
     parser.add_argument('--batch_size', type=int, default=64)
     args, _ = parser.parse_known_args()

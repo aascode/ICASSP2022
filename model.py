@@ -155,10 +155,10 @@ def get_model4(input_shape):  # Convolution model
     #model.add(Dense(256, activation='relu', activity_regularizer=l2(0.0001), name='dense_1'))
     model.add(Dense(128, activation='relu', activity_regularizer=l2(0.0001), name='dense_2'))
     model.add(Dense(64, activation='relu', activity_regularizer=l2(0.0001), name='dense_3'))
-    model.add(Dropout(rate=0.2, name='dropout_1'))
+    #model.add(Dropout(rate=0.1, name='dropout_1'))
     model.add(Dense(32, activation='relu', activity_regularizer=l2(0.0001), name='dense_4'))
     model.add(Dense(16, activation='relu', activity_regularizer=l2(0.0001), name='dense_5'))
-    model.add(Dropout(rate=0.1, name='dropout_2'))
+    #model.add(Dropout(rate=0.1, name='dropout_2'))
     model.add(Dense(2, activation='softmax', activity_regularizer=l2(0.0001), name='dense_6'))
 
     opt = Adam(learning_rate=initial_lr)
